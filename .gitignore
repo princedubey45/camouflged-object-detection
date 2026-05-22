@@ -18,7 +18,10 @@ __pycache__/
 
 # Large weights and model checkpoints
 *.pth
-checkpoints/
+checkpoints/*
+!checkpoints/escnet/
+checkpoints/escnet/*
+!checkpoints/escnet/new_epoch_25_bayesian.pth
 
 # Predictions and results outputs
 preds/
@@ -43,3 +46,4 @@ error_plot.txt
 arch_slide.png
 bayesian_curve.png
 visual.png
+.vercel
