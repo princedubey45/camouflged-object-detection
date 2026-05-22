@@ -1,0 +1,21 @@
+.venv
+.git
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.DS_Store
+*.pptx
+*.pdf
+*.log
+*.txt
+
+# Ignore unnecessary checkpoints to keep Docker build size small
+checkpoints/escnet/new_epoch_5.pth
+checkpoints/escnet/new_epoch_10.pth
+checkpoints/escnet/new_epoch_15.pth
+checkpoints/escnet/new_epoch_20.pth
+checkpoints/escnet/new_epoch_25.pth
+
+# Keep only the bayesian weights used by app.py:
+# checkpoints/escnet/new_epoch_25_bayesian.pth

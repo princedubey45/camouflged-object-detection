@@ -599,18 +599,20 @@ class MBAMeasure(object):
             pred_in_bound = pred[boundary_region]
 
             num_edge_pixels = (boundary_region).sum()
-            num_pred_gd_pix = (
-                (gt_in_bound) * (pred_in_bound)
-                + (1 - gt_in_bound) * (1 - pred_in_bound)
-            ).sum()
-
-            pred_acc[i] = num_pred_gd_pix / num_edge_pixels
+            if num_edge_pixels > 0:
+                num_pred_gd_pix = (
+                    (gt_in_bound) * (pred_in_bound)
+                    + (1 - gt_in_bound) * (1 - pred_in_bound)
+                ).sum()
+                pred_acc[i] = num_pred_gd_pix / num_edge_pixels
+            else:
+                pred_acc[i] = 1.0
 
         ba = sum(pred_acc) / num_steps
         return ba
 
     def get_results(self) -> dict:
-        mba = np.mean(np.array(self.bas, _TYPE))
+        mba = np.nanmean(np.array(self.bas, _TYPE))
         return dict(mba=mba)
 
 

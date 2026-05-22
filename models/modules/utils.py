@@ -74,21 +74,35 @@ def _pair(x):
     return x
 
 
+# def image2patches(
+#     image,
+#     grid_h=32,
+#     grid_w=32,
+#     patch_ref=None,
+#     transformation="b c (hg h) (wg w) -> (b hg wg) c h w",
+# ):
+#     if patch_ref is not None:
+#         grid_h, grid_w = (
+#             image.shape[-2] // patch_ref.shape[-2],
+#             image.shape[-1] // patch_ref.shape[-1],
+#         )
+#     patches = rearrange(image, transformation, hg=grid_h, wg=grid_w)
+#     return patches
+
+
 def image2patches(
     image,
-    grid_h=2,
-    grid_w=2,
+    grid_h=32,
+    grid_w=32,
     patch_ref=None,
     transformation="b c (hg h) (wg w) -> (b hg wg) c h w",
 ):
     if patch_ref is not None:
-        grid_h, grid_w = (
-            image.shape[-2] // patch_ref.shape[-2],
-            image.shape[-1] // patch_ref.shape[-1],
-        )
+        grid_h = image.shape[-2] // patch_ref.shape[-2]
+        grid_w = image.shape[-1] // patch_ref.shape[-1]
+
     patches = rearrange(image, transformation, hg=grid_h, wg=grid_w)
     return patches
-
 
 class FeedForward(nn.Module):
     def __init__(self, dim, ffn_expansion_factor, bias):

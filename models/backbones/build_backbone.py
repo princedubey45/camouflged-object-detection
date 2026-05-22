@@ -38,20 +38,33 @@ def load_weights(config, model, model_name):
         for k, v in save_model.items()
         if k in model_dict.keys()
     }
+    if not state_dict:
+        backbone_prefix = "encoder.backbone."
+        state_dict = {
+            k[len(backbone_prefix):]: (
+                v if v.size() == model_dict[k[len(backbone_prefix):]].size()
+                else model_dict[k[len(backbone_prefix):]]
+            )
+            for k, v in save_model.items()
+            if k.startswith(backbone_prefix)
+            and k[len(backbone_prefix):] in model_dict.keys()
+        }
+
     # to ignore the weights with mismatched size when I modify the backbones itself.
     if not state_dict:
         save_model_keys = list(save_model.keys())
         sub_item = save_model_keys[0] if len(save_model_keys) == 1 else None
-        state_dict = {
-            k: v if v.size() == model_dict[k].size() else model_dict[k]
-            for k, v in save_model[sub_item].items()
-            if k in model_dict.keys()
-        }
+        if sub_item is not None and isinstance(save_model[sub_item], dict):
+            state_dict = {
+                k: v if v.size() == model_dict[k].size() else model_dict[k]
+                for k, v in save_model[sub_item].items()
+                if k in model_dict.keys()
+            }
         if not state_dict or not sub_item:
-            print(
-                "Weights are not successfully loaded. Check the state dict of weights file."
+            raise RuntimeError(
+                f'Weights from "{weight_path}" could not be mapped onto backbone "{model_name}". '
+                "Use a backbone checkpoint or an ESCNet checkpoint that contains encoder.backbone.* keys."
             )
-            return None
         else:
             print(
                 'Found correct weights in the "{}" item of loaded state_dict.'.format(

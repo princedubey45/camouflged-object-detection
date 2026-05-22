@@ -1,0 +1,45 @@
+# Python virtual environment
+.venv/
+venv/
+ENV/
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Operating system files
+.DS_Store
+
+# IDE configurations
+.vscode/
+.idea/
+
+# Large weights and model checkpoints
+*.pth
+checkpoints/
+
+# Predictions and results outputs
+preds/
+new_preds/
+new_results/
+new_results_preds/
+test_30_preds/
+test_30_res/
+
+# Log files
+*.log
+log.txt
+train.log
+output.log
+train_output.log
+error.log
+error_plot.txt
+
+# Presentation slides / docs (if you want to keep them local only)
+*.pptx
+*.pdf
+arch_slide.png
+bayesian_curve.png
+visual.png

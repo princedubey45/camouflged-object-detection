@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESCNet Explorer</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/styles.css">
+    <style>
+        /* ── debug banner ── */
+        #debug-bar {
+            display: none;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: #111;
+            color: #0f0;
+            font: 12px/1.6 monospace;
+            padding: 6px 14px;
+            z-index: 9999;
+            white-space: pre-wrap;
+            max-height: 120px;
+            overflow-y: auto;
+        }
+
+        /* ── uncertainty placeholder while loading ── */
+        .heatmap-placeholder {
+            width: 100%;
+            aspect-ratio: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255, 255, 255, 0.04);
+            border-radius: 8px;
+            color: rgba(255, 255, 255, 0.3);
+            font-size: 13px;
+            letter-spacing: .03em;
+        }
+
+        .unc-error-msg {
+            color: #ff6b6b;
+            font-size: 12px;
+            margin-top: 8px;
+            text-align: center;
+        }
+
+        /* make sure heatmap images are always visible once set */
+        #result-heatmap,
+        #result-uncertainty {
+            width: 100%;
+            display: block;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="hologram-bg"></div>
+
+    <header>
+        <div class="logo">
+            <h1>ESCNet</h1>
+            <span class="badge">Model Explorer</span>
+        </div>
+        <p>Interactive Computer Vision demo featuring Fourier Module &amp; Bayesian Uncertainty</p>
+    </header>
+
+    <main class="container">
+
+        <!-- Upload Section -->
+        <section class="upload-section glass-panel">
+            <div id="drop-zone" class="drop-zone">
+                <div class="icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="17 8 12 3 7 8" />
+                        <line x1="12" y1="3" x2="12" y2="15" />
+                    </svg>
+                </div>
+                <h2>Upload an Image</h2>
+                <p>Drag and drop or click to browse</p>
+                <input type="file" id="file-input" accept="image/*" class="hidden">
+            </div>
+
+            <div class="preview-container hidden" id="preview-container">
+                <img id="preview-image" src="" alt="Preview">
+                <button id="predict-btn" class="glow-btn">
+                    <span>Analyze with ESCNet</span>
+                </button>
+            </div>
+        </section>
+
+        <!-- Loading State -->
+        <div id="loading" class="loading-overlay hidden">
+            <div class="spinner"></div>
+            <p>Processing Image &amp; Extracting Frequencies…</p>
+        </div>
+
+        <!-- Results Section -->
+        <section id="results-section" class="results-section hidden">
+
+            <!-- Predicted Mask & Overlay -->
+            <div class="result-card glass-panel" style="grid-column: 1 / -1;">
+                <div class="card-header">
+                    <h3>Visual Analysis</h3>
+                    <div class="subtitle">Input vs. Segmentation Mask vs. Overlay</div>
+                </div>
+                <div class="card-body">
+                    <div class="analysis-grid">
+                        <div class="analysis-item">
+                            <label>Input Image</label>
+                            <img id="result-orig" class="result-img" alt="Original Image">
+                        </div>
+                        <div class="analysis-item">
+                            <label>Predicted Mask</label>
+                            <img id="result-mask" class="result-img" alt="Predicted Mask">
+                        </div>
+                        <div class="analysis-item">
+                            <label>Overlay Result</label>
+                            <img id="result-overlay" class="result-img" alt="Overlay Image">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- FFT Heatmap -->
+            <div class="result-card glass-panel">
+                <div class="card-header">
+                    <div class="title-with-badge">
+                        <h3>Fourier Module</h3>
+                        <span class="badge primary">Frequency Branch</span>
+                    </div>
+                    <div class="subtitle">FFT Magnitude Heatmap</div>
+                </div>
+                <div class="card-body heatmap-body">
+                    <div id="fft-placeholder" class="heatmap-placeholder">Waiting for analysis…</div>
+                    <img id="result-heatmap" class="heatmap-img" alt="FFT Heatmap" style="display:none;">
+                    <div class="heatmap-legend">
+                        <div class="gradient-bar"></div>
+                        <div class="legend-labels">
+                            <span>Low Magnitude</span>
+                            <span>High Magnitude</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bayesian Uncertainty -->
+            <div class="result-card glass-panel unc-card">
+                <div class="card-header">
+                    <div class="title-with-badge">
+                        <h3>Bayesian Uncertainty</h3>
+                        <span class="badge" style="background:#ff4b4b;color:white;">Confidence Map</span>
+                    </div>
+                    <div class="subtitle">Model Aleatoric Uncertainty</div>
+                </div>
+                <div class="card-body heatmap-body">
+                    <div id="unc-placeholder" class="heatmap-placeholder">Waiting for analysis…</div>
+                    <img id="result-uncertainty" class="heatmap-img" alt="Uncertainty Heatmap" style="display:none;">
+                    <div class="heatmap-legend">
+                        <div class="gradient-bar"></div>
+                        <div class="legend-labels">
+                            <span>Certain</span>
+                            <span>Uncertain</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </section>
+    </main>
+
+    <footer>
+        <p>Built with Vanilla JS &amp; CSS • Configured for Apple Silicon MPS</p>
+    </footer>
+
+    <!-- debug bar — shows key info at bottom of screen -->
+    <div id="debug-bar"></div>
+
+    <script src="/static/script.js"></script>
+</body>
+
+</html>

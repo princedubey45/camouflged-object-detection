@@ -1,4 +1,5 @@
 import os
+os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
 import argparse
 from glob import glob
 import pdb
@@ -23,13 +24,22 @@ def inference(model, data_loader_test, pred_root, method, device):
         gts = batch[1].to(device)
         label_paths = batch[-1]
         os.makedirs(os.path.join(pred_root, method), exist_ok=True)
+        os.makedirs(os.path.join(pred_root, method + "_uncertainty"), exist_ok=True)
         with torch.no_grad():
-            out_edge, scaled_preds = model(inputs)
+            out_edge, scaled_preds, log_var = model(inputs)
         pred_lvl = (scaled_preds[-1].sigmoid() >= 0.5).float()
 
         for idx_sample in range(pred_lvl.shape[0]):
             res = torch.nn.functional.interpolate(
                 pred_lvl[idx_sample].unsqueeze(0),
+                size=cv2.imread(
+                    label_paths[idx_sample], cv2.IMREAD_GRAYSCALE
+                ).shape[:2],
+                mode="bilinear",
+                align_corners=True,
+            )
+            res_unc = torch.nn.functional.interpolate(
+                log_var[idx_sample].unsqueeze(0),
                 size=cv2.imread(
                     label_paths[idx_sample], cv2.IMREAD_GRAYSCALE
                 ).shape[:2],
@@ -43,15 +53,41 @@ def inference(model, data_loader_test, pred_root, method, device):
                     label_paths[idx_sample].replace("\\", "/").split("/")[-1],
                 ),
             ) 
+            
+            # Process uncertainty to heatmap
+            import numpy as np
+            res_unc = torch.clamp(res_unc, min=-20, max=20)
+            unc_map = torch.exp(res_unc).squeeze().cpu().numpy()
+            unc_map = np.nan_to_num(unc_map, nan=0.0, posinf=0.0, neginf=0.0)
+            min_v, max_v = unc_map.min(), unc_map.max()
+            if max_v > min_v:
+                unc_map = (unc_map - min_v) / (max_v - min_v)
+            else:
+                unc_map = np.zeros_like(unc_map)
+            unc_map = (unc_map * 255).astype("uint8")
+            unc_map = cv2.applyColorMap(unc_map, cv2.COLORMAP_JET)
+            cv2.imwrite(
+                os.path.join(
+                    os.path.join(pred_root, method + "_uncertainty"),
+                    label_paths[idx_sample].replace("\\", "/").split("/")[-1],
+                ),
+                unc_map
+            ) 
     return None
 
 
-def load_and_infer_on_gpu(model, weights, data_loader_test, pred_root, testset, device):
+def load_and_infer_on_gpu(model, weights, data_loader_test, pred_root, testset, device, config):
     # Load model weights
     state_dict = torch.load(weights, map_location=device, weights_only=True)
     state_dict = check_state_dict(state_dict)
+    
+    # Perform a dummy forward pass to initialize lazy modules in the decoder
+    dummy_input = torch.randn(1, 3, config.img_size, config.img_size).to(device)
+    with torch.no_grad():
+        model(dummy_input)
+        
     model.load_state_dict(
-        state_dict
+        state_dict, strict=False
     )  
     
     inference(
@@ -67,15 +103,19 @@ def load_and_infer_on_gpu(model, weights, data_loader_test, pred_root, testset, 
 
 
 def run_inference_on_gpu(config, device_id, weights_lst, data_loader_test, pred_root, testset):
-    # Assign the current GPU
-    current_device = f"cuda:{device_id}"
+    if torch.cuda.is_available():
+        current_device = f"cuda:{device_id}"
+    elif torch.backends.mps.is_available():
+        current_device = "mps"
+    else:
+        current_device = "cpu"
     model = ESCNet(config ,pretrained=False).to(current_device)
 
     # Load and infer each model assigned to this GPU
     for weights in weights_lst:
         print(f"Running inference on GPU {current_device} with model {weights}")
         load_and_infer_on_gpu(
-            model, weights, data_loader_test, pred_root, testset, current_device
+            model, weights, data_loader_test, pred_root, testset, current_device, config
         )
 
 
@@ -96,9 +136,16 @@ def main(args):
     else:
         print("Testing with models in {}".format(ckpt_folder))
 
+    weights_lst = ([args.ckpt] if args.ckpt else glob(os.path.join(ckpt_folder, "*.pth")))
+    
+    def get_epoch_num(path):
+        import re
+        match = re.search(r"epoch_(\d+)", path)
+        return int(match.group(1)) if match else 0
+
     weights_lst = sorted(
-        ([args.ckpt] if args.ckpt else glob(os.path.join(ckpt_folder, "*.pth"))),
-        key=lambda x: int(x.split("epoch_")[-1].split(".pth")[0]),
+        weights_lst,
+        key=get_epoch_num,
         reverse=True,
     )
 

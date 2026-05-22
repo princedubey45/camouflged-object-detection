@@ -40,12 +40,12 @@ def parse_arguments():
     )
     args = parser.parse_args()
 
-    args.metrics = "+".join(["S", "MAE", "E", "F", "WF", "MSE"])
+    args.metrics = "+".join(["S", "MAE", "E", "F", "WF", "MBA"])
     args.model_folder = args.pred_root
     args.model_lst = [
         d
         for d in os.listdir(args.model_folder)
-        if os.path.isdir(os.path.join(args.model_folder, d))
+        if os.path.isdir(os.path.join(args.model_folder, d)) and not d.endswith("_uncertainty")
     ]
     os.makedirs(args.save_dir, exist_ok=True)
     return args
@@ -97,6 +97,7 @@ def evaluate_model(model_name, gt_paths, args, tb):
         fm["curve"].mean().round(3),
         em["curve"].mean().round(3),
         mae.round(3),
+        mba.round(3),
     ]
     scores = [
         f".{score:.3f}".split(".")[-1] if score <= 1 else f"{score:<4}"
@@ -122,6 +123,7 @@ def evaluate_models_parallel(args, config):
         "meanFm",
         "meanEm",
         "MAE",
+        "MBA",
     ]
 
     n_threads = args.n_threads

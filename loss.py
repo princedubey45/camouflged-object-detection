@@ -113,3 +113,31 @@ class StructureLoss(torch.nn.Module):
         iou = 1 - (inter + self.epision) / (union - inter + self.epision)
 
         return (bce + iou).mean()
+
+class UncertaintyStructureLoss(torch.nn.Module):
+    def __init__(self, epision=1e-6):
+        super().__init__()
+        self.epision = epision
+
+    def forward(self, pred, target, log_var):
+        # Aleatoric uncertainty formulation for pixel-wise BCE loss
+        bce = F.binary_cross_entropy_with_logits(pred, target, reduction="none")
+        
+        # Scale BCE with uncertainty and add the regularization term
+        # exp(-log_var) is used to divide by variance.
+        # Ensure log_var is interpolated to the same size as pred/target if needed, 
+        # but in our case log_var comes from p1 which is the same size as pred initially,
+        # but might need interpolation if used for different levels.
+        if log_var.shape[2:] != target.shape[2:]:
+            log_var = F.interpolate(log_var, size=target.shape[2:], mode="bilinear", align_corners=False)
+            
+        uncertainty_loss = bce * torch.exp(-log_var) + 0.5 * log_var
+        uncertainty_loss = uncertainty_loss.mean(dim=(2, 3))
+
+        # Standard IoU loss on valid probabilities
+        pred_sig = torch.sigmoid(pred)
+        inter = (pred_sig * target).sum(dim=(2, 3))
+        union = (pred_sig + target).sum(dim=(2, 3))
+        iou = 1 - (inter + self.epision) / (union - inter + self.epision)
+
+        return (uncertainty_loss + iou).mean()

@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/",
+      "destination": "/static/index.html"
+    },
+    {
+      "source": "/predict",
+      "destination": "https://YOUR-BACKEND-API-URL.com/predict"
+    }
+  ]
+}

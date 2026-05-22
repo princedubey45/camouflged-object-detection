@@ -1,6 +1,9 @@
 # train.py
 import os
+os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
 import argparse
+from contextlib import nullcontext
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -12,7 +15,7 @@ from torch.utils.data.distributed import DistributedSampler
 
 from config import Config, load_config
 from dataset import MyData
-from loss import EdgeDiceLoss, StructureLoss
+from loss import EdgeDiceLoss, StructureLoss, UncertaintyStructureLoss
 from models.ESCNet import ESCNet
 from utils import Logger, AverageMeter, set_seed
 
@@ -27,14 +30,31 @@ def cleanup_ddp():
     destroy_process_group()
 
 
+def resolve_device(config: Config, rank: int) -> torch.device:
+    if config.is_ddp and not torch.cuda.is_available():
+        raise RuntimeError(
+            "multi_GPU=true but CUDA is not available. Install a CUDA-enabled PyTorch build "
+            "or set multi_GPU to false."
+        )
+
+    if torch.cuda.is_available():
+        return torch.device(f"cuda:{config.device_ids[rank]}")
+    elif torch.backends.mps.is_available():
+        return torch.device("mps")
+
+    return torch.device("cpu")
+
+
 class Trainer:
     def __init__(self, config: Config, rank: int, world_size: int):
         self.config = config
         self.rank = rank
         self.world_size = world_size
-        self.device = self.config.device_ids[self.rank]
+        self.device = resolve_device(self.config, self.rank)
+        self.use_amp = bool(self.config.use_amp and self.device.type == "cuda")
 
-        torch.cuda.set_device(self.device)
+        if self.device.type == "cuda":
+            torch.cuda.set_device(self.device)
         if self.config.precisionHigh:
             torch.set_float32_matmul_precision("high")
         
@@ -47,6 +67,10 @@ class Trainer:
         )
 
         self.log(f"Trainer initialized on rank {self.rank} with device {self.device}.")
+        if self.rank == 0 and self.device.type != "cuda":
+            self.log(
+                "CUDA is unavailable in this environment. Training will run on CPU and may be very slow."
+            )
         self.log(f"Full config:\n{self.config.model_dump_json(indent=2)}")
 
         self.train_loader = self._prepare_dataloader()
@@ -54,10 +78,38 @@ class Trainer:
             self._prepare_model_and_optimizer()
         )
 
-        self.scaler = GradScaler()
+        self.scaler = GradScaler(enabled=self.use_amp)
         self.structure_loss = StructureLoss().to(self.device)
+        self.uncertainty_structure_loss = UncertaintyStructureLoss().to(self.device)
         self.dice_loss = EdgeDiceLoss().to(self.device)
         self.loss_log = AverageMeter()
+
+        # Resume from checkpoint if specified
+        self.start_epoch = 1
+        if self.config.resume:
+            ckpt_path = self.config.resume
+            self.log(f"Resuming from checkpoint: {ckpt_path}")
+            state_dict = torch.load(ckpt_path, map_location=self.device)
+            if "model" in state_dict:
+                state_dict = state_dict["model"]
+            
+            # Dummy forward pass to initialize lazy modules before loading weights
+            dummy_input = torch.randn(1, 3, config.img_size, config.img_size).to(self.device)
+            with torch.no_grad():
+                # For DDP, get underlying model, else self.model
+                m = getattr(self.model, "module", self.model)
+                m(dummy_input)
+                
+            self.model.load_state_dict(state_dict, strict=False)
+            # Extract epoch number from filename e.g. epoch_30.pth -> 30
+            import re
+            match = re.search(r"epoch_(\d+)", ckpt_path)
+            if match:
+                self.start_epoch = int(match.group(1)) + 1
+                # Fast-forward LR scheduler to correct epoch
+                for _ in range(self.start_epoch - 1):
+                    self.lr_scheduler.step()
+            self.log(f"Resumed. Starting from epoch {self.start_epoch}")
 
     def log(self, message: str):
         if self.rank == 0:
@@ -65,18 +117,18 @@ class Trainer:
 
     def _prepare_dataloader(self) -> DataLoader:
         dataset = MyData(
-            config,
+            self.config,
             dataset_dir=self.config.train_dir,
             image_size=self.config.img_size,
             is_train=True,
         )
-        sampler = DistributedSampler(dataset) if self.config.is_ddp else None
+        sampler = DistributedSampler(dataset) if getattr(self.config, "is_ddp", False) else None
 
         loader = DataLoader(
             dataset=dataset,
             batch_size=self.config.batch_size,
             num_workers=min(self.config.num_workers, self.config.batch_size),
-            pin_memory=True,
+            pin_memory=False,
             shuffle=(sampler is None),  # DDP模式下shuffle由sampler控制
             sampler=sampler,
             drop_last=True,
@@ -86,7 +138,8 @@ class Trainer:
 
     def _prepare_model_and_optimizer(self):
         model = ESCNet(self.config, pretrained=True).to(self.device)
-        if self.config.is_ddp:
+        
+        if getattr(self.config, "is_ddp", False):
             model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
             model = DDP(model, device_ids=[self.device])
 
@@ -95,6 +148,7 @@ class Trainer:
             self.log("Model compiled with torch.compile.")
 
         optimizer = optim.AdamW(
+
             params=model.parameters(),
             lr=self.config.lr,
             weight_decay=self.config.weight_decay,
@@ -138,8 +192,14 @@ class Trainer:
                 edges.to(self.device),
             )
 
-            with autocast(device_type="cuda", dtype=torch.float32):
-                out_edge, out_pred_masks = self.model(inputs)
+            autocast_context = (
+                autocast(device_type="cuda", dtype=torch.float16)
+                if self.use_amp
+                else nullcontext()
+            )
+
+            with autocast_context:
+                out_edge, out_pred_masks, log_var = self.model(inputs)
 
                 loss_dice = self.dice_loss(out_edge, edges)
 
@@ -154,14 +214,28 @@ class Trainer:
                         mode="bilinear",
                         align_corners=False,
                     )
-                    loss_structure += (
-                        self.structure_loss(pred_lvl_resized, gts) * factors[i]
-                    )
+                    if i == len(out_pred_masks) - 1:
+                        loss_structure += (
+                            self.uncertainty_structure_loss(pred_lvl_resized, gts, log_var) * factors[i]
+                        )
+                    else:
+                        loss_structure += (
+                            self.structure_loss(pred_lvl_resized, gts) * factors[i]
+                        )
 
                 total_loss = loss_structure + loss_dice
 
+            # NaN protection — skip corrupt batches
+            if torch.isnan(total_loss):
+                self.log(f"NaN detected at Epoch[{epoch}] Iter[{batch_idx}] — skipping batch")
+                self.optimizer.zero_grad()
+                continue
+
             self.optimizer.zero_grad()
             self.scaler.scale(total_loss).backward()
+            # Gradient clipping to prevent explosion
+            self.scaler.unscale_(self.optimizer)
+            nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
             self.scaler.step(self.optimizer)
             self.scaler.update()
 
@@ -183,7 +257,7 @@ class Trainer:
 
     def train(self):
         self.log("Starting training process...")
-        for epoch in range(1, self.config.epochs + 1):
+        for epoch in range(self.start_epoch, self.config.epochs + 1):
             self.train_epoch(epoch)
             self._save_checkpoint(epoch)
         self.log("Training finished.")
@@ -218,5 +292,6 @@ if __name__ == "__main__":
         os.environ["OMP_NUM_THREADS"] = "4"
         main(config)
     else:  # 单卡模式
-        os.environ["CUDA_VISIBLE_DEVICES"] = str(config.device_ids[0])
+        if torch.cuda.is_available():
+            os.environ["CUDA_VISIBLE_DEVICES"] = str(config.device_ids[0])
         main(config)

@@ -1,82 +1,85 @@
-# config.py
 import yaml
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, Field, FilePath, DirectoryPath
 
-# --- Nested Models for better structure ---
 
+# --- Nested Models ---
 class WeightsPaths(BaseModel):
-    """Defines and validates paths to backbone weights."""
     pvt_v2_b2: FilePath
     pvt_v2_b4: FilePath
     pvt_v2_b5: FilePath
 
-# --- Main Configuration Class ---
 
+# --- Main Config ---
 class Config(BaseModel):
 
-    batch_size: int = Field(..., gt=0, description="Batch size for training.")
-    batch_size_valid: int = Field(..., gt=0, description="Batch size for validation.")
-    epochs: int = Field(..., gt=0, description="Total number of training epochs.")
-    lr: float = Field(..., gt=0, description="Learning rate.")
-    weight_decay: float = Field(..., ge=0, description="Weight decay for the optimizer.")
+    # Training
+    batch_size: int = Field(..., gt=0)
+    batch_size_valid: int = Field(..., gt=0)
+    epochs: int = Field(..., gt=0)
+    lr: float = Field(..., gt=0)
+    weight_decay: float = Field(..., ge=0)
     rand_seed: int = 42
-    precisionHigh: bool = True
+    precisionHigh: bool = False   # safer default
 
-    # --- Dataset Configuration ---
-    train_dir: DirectoryPath   # Validates that the train directory exists
-    test_dir: DirectoryPath    # Validates that the test directory exists
+    # Dataset
+    train_dir: DirectoryPath
+    test_dir: DirectoryPath
     load_all: bool = False
 
-    # --- Model Configuration ---
+    # Model
     backbone: str
     img_size: int = Field(..., gt=0)
     lateral_channels: List[int]
-    resume: Optional[str] = None # Allows the field to be missing or empty ""
-    compile: bool = True
+    resume: Optional[str] = None
+    compile: bool = False
+    use_frequency_branch: bool = False
+    frequency_mode: str = "fft"
+    use_amp: bool = True
 
-    # --- Multi-GPU Settings ---
+    # GPU
     device_ids: List[int]
     multi_GPU: bool = False
 
-    # --- Save Settings ---
-    save_model_dir: str 
-    name: str 
+    # Saving
+    save_model_dir: str
+    name: str
     save_last: int = Field(..., ge=0)
     save_step: int = Field(..., gt=0)
 
-    # --- Data Augmentation ---
+    # Augmentation
     preproc_methods: List[str]
 
-    # --- Path Settings ---
+    # Paths
     weights: WeightsPaths
 
-    # --- System ---
+    # System
     num_workers: int = Field(..., ge=0)
-    
-    # --- Helper Properties (for cleaner code in train.py) ---
+
+    # --- Helpers ---
     @property
     def is_ddp(self) -> bool:
-        """Returns True if Distributed Data Parallel (DDP) should be used."""
         return self.multi_GPU and len(self.device_ids) > 1
 
     @property
     def save_path(self) -> Path:
-        """
-        Generates the full, unique path for saving models and logs for this run.
-        It creates the directory if it doesn't exist.
-        """
         path = Path(self.save_model_dir) / self.name
         path.mkdir(parents=True, exist_ok=True)
         return path
 
 
+# --- Loader ---
 def load_config(config_path: str = "config.yaml") -> Config:
-    """Loads a YAML configuration file into a validated Config object."""
-    with open(config_path, 'r') as f:
+    """Load YAML safely with UTF-8 and normalize values."""
+
+    # ✅ FIX 1: Encoding issue
+    with open(config_path, "r", encoding="utf-8") as f:
         config_dict = yaml.safe_load(f)
-    
-    # Pydantic will raise a ValidationError if the config is invalid
+
+    # ✅ FIX 2: Normalize resume
+    if config_dict.get("resume") == "":
+        config_dict["resume"] = None
+
     return Config(**config_dict)

@@ -71,75 +71,243 @@ class FEM(nn.Module):
         return fused_features + dw
 
 
+# class Decoder(nn.Module):
+#     def __init__(self, config, in_channel):
+#         super(Decoder, self).__init__()
+#         self.config = config
+
+#         self.ipt_blk5 = ConvsByConvs(  # 将patch做下通道卷积操作
+#             2**10 * 3,
+#             in_channel // 4,
+#         )
+#         self.ipt_blk4 = ConvsByConvs(
+#             2**8 * 3,
+#             in_channel // 4,
+#         )
+#         self.ipt_blk3 = ConvsByConvs(
+#             2**6 * 3,
+#             in_channel // 4,
+#         )
+#         self.ipt_blk2 = ConvsByConvs(
+#             2**4 * 3,
+#             in_channel // 4,
+#         )
+#         self.decoder_block4 = ConvsByConvs(in_channel, in_channel)
+
+#         self.decoder_block3 = MTA(
+#             in_channel,
+#             in_channel,
+#         )
+
+#         self.decoder_block2 = MTA(
+#             in_channel,
+#             in_channel,
+#         )
+
+#         self.decoder_block1 = MTA(
+#             in_channel,
+#             in_channel,
+#         )
+
+#         self.conv_mask_4 = nn.Sequential(
+#             nn.Conv2d(in_channel, 1, 1, 1, 0),
+#             # nn.BatchNorm2d(ic),
+#             # nn.ReLU(inplace=True),
+#             # nn.Conv2d(ic, 1, 1, 1, 0),
+#         )
+#         self.conv_mask_3 = nn.Sequential(
+#             nn.Conv2d(in_channel, 1, 1, 1, 0),
+#             # nn.BatchNorm2d(ic),
+#             # nn.ReLU(inplace=True),
+#             # nn.Conv2d(ic, 1, 1, 1, 0),
+#         )
+#         self.conv_mask_2 = nn.Sequential(
+#             nn.Conv2d(in_channel, 1, 1, 1, 0),
+#             # nn.BatchNorm2d(ic),
+#             # nn.ReLU(inplace=True),
+#             # nn.Conv2d(ic, 1, 1, 1, 0),
+#         )
+
+#         self.tra_fr = nn.Sequential(
+#             nn.Upsample(scale_factor=2, mode="bilinear", align_corners=False),
+#             nn.Conv2d(in_channel, in_channel // 2, 1, 1, 0),
+#             nn.BatchNorm2d(in_channel // 2),
+#             nn.ReLU(inplace=True),
+#         )
+#         self.predictor_fr = nn.Sequential(
+#             nn.Upsample(scale_factor=2, mode="bilinear", align_corners=False),
+#             nn.Conv2d(in_channel // 2, in_channel // 2, 3, 1, 1),
+#             nn.BatchNorm2d(in_channel // 2),
+#             nn.ReLU(inplace=True),
+#             nn.Conv2d(in_channel // 2, 1, 1, 1, 0),
+#         )
+
+#         self.De_conv4 = FEM(in_channel + in_channel // 4, in_channel, edge=True)
+#         self.De_conv3 = FEM(in_channel + in_channel // 4, in_channel, edge=True)
+#         self.De_conv2 = FEM(in_channel + in_channel // 4, in_channel, edge=True)
+#         self.De_conv1 = FEM(in_channel + in_channel // 4, in_channel, edge=True)
+
+#     def forward(self, features, edge):
+#         x, x1, x2, x3, x4 = features
+
+#         patches_batch = image2patches(
+#             x, patch_ref=x4, transformation="b c (hg h) (wg w) -> b (c hg wg) h w"
+#         )
+#         x4 = torch.cat(
+#             (
+#                 x4,
+#                 self.ipt_blk5(
+#                     F.interpolate(
+#                         patches_batch,
+#                         size=x4.shape[2:],
+#                         mode="bilinear",
+#                         align_corners=False,
+#                     )
+#                 ),
+#             ),
+#             1,
+#         )
+#         x4 = self.De_conv4(
+#             x4,
+#             edge=F.interpolate(
+#                 edge, size=x4.shape[2:], mode="bilinear", align_corners=False
+#             ),
+#         )
+
+#         patches_batch = image2patches(
+#             x, patch_ref=x3, transformation="b c (hg h) (wg w) -> b (c hg wg) h w"
+#         )
+#         x3 = torch.cat(
+#             (
+#                 x3,
+#                 self.ipt_blk4(
+#                     F.interpolate(
+#                         patches_batch,
+#                         size=x3.shape[2:],
+#                         mode="bilinear",
+#                         align_corners=False,
+#                     )
+#                 ),
+#             ),
+#             1,
+#         )
+#         x3 = self.De_conv3(
+#             x3,
+#             edge=F.interpolate(
+#                 edge, size=x3.shape[2:], mode="bilinear", align_corners=False
+#             ),
+#         )
+
+#         patches_batch = image2patches(
+#             x, patch_ref=x2, transformation="b c (hg h) (wg w) -> b (c hg wg) h w"
+#         )
+#         x2 = torch.cat(
+#             (
+#                 x2,
+#                 self.ipt_blk3(
+#                     F.interpolate(
+#                         patches_batch,
+#                         size=x2.shape[2:],
+#                         mode="bilinear",
+#                         align_corners=False,
+#                     )
+#                 ),
+#             ),
+#             1,
+#         )
+#         x2 = self.De_conv2(
+#             x2,
+#             edge=F.interpolate(
+#                 edge, size=x2.shape[2:], mode="bilinear", align_corners=False
+#             ),
+#         )
+
+#         patches_batch = image2patches(
+#             x, patch_ref=x1, transformation="b c (hg h) (wg w) -> b (c hg wg) h w"
+#         )
+#         x1 = torch.cat(
+#             (
+#                 x1,
+#                 self.ipt_blk2(
+#                     F.interpolate(
+#                         patches_batch,
+#                         size=x1.shape[2:],
+#                         mode="bilinear",
+#                         align_corners=False,
+#                     )
+#                 ),
+#             ),
+#             1,
+#         )
+#         x1 = self.De_conv1(
+#             x1,
+#             edge=F.interpolate(
+#                 edge, size=x1.shape[2:], mode="bilinear", align_corners=False
+#             ),
+#         )
+
+#         out_mask = []
+
+#         p4 = self.decoder_block4(x4)
+
+#         m4 = self.conv_mask_4(p4)
+
+#         _p4 = F.interpolate(p4, size=x3.shape[2:], mode="bilinear", align_corners=False)
+#         _p3 = _p4 + x3
+
+#         p3 = self.decoder_block3(_p3, m4, edge, x)
+#         m3 = self.conv_mask_3(p3)
+#         _p3 = F.interpolate(p3, size=x2.shape[2:], mode="bilinear", align_corners=False)
+#         _p2 = _p3 + x2
+
+#         p2 = self.decoder_block2(_p2, m3, edge, x)
+#         m2 = self.conv_mask_2(p2)
+#         _p2 = F.interpolate(p2, size=x1.shape[2:], mode="bilinear", align_corners=False)
+#         _p1 = _p2 + x1
+
+#         p1 = self.decoder_block1(_p1, m2, edge, x)
+#         m1 = self.predictor_fr(self.tra_fr(p1))
+
+#         out_mask.append(m4)
+#         out_mask.append(m3)
+#         out_mask.append(m2)
+#         out_mask.append(m1)
+
+#         return out_mask
 class Decoder(nn.Module):
     def __init__(self, config, in_channel):
         super(Decoder, self).__init__()
         self.config = config
 
-        self.ipt_blk5 = ConvsByConvs(  # 将patch做下通道卷积操作
-            2**10 * 3,
-            in_channel // 4,
-        )
-        self.ipt_blk4 = ConvsByConvs(
-            2**8 * 3,
-            in_channel // 4,
-        )
-        self.ipt_blk3 = ConvsByConvs(
-            2**6 * 3,
-            in_channel // 4,
-        )
-        self.ipt_blk2 = ConvsByConvs(
-            2**4 * 3,
-            in_channel // 4,
-        )
+        # Lazy blocks (initialized after first forward)
+        self.ipt_blk5 = None
+        self.ipt_blk4 = None
+        self.ipt_blk3 = None
+        self.ipt_blk2 = None
+
         self.decoder_block4 = ConvsByConvs(in_channel, in_channel)
 
-        self.decoder_block3 = MTA(
-            in_channel,
-            in_channel,
-        )
+        self.decoder_block3 = MTA(in_channel, in_channel)
+        self.decoder_block2 = MTA(in_channel, in_channel)
+        self.decoder_block1 = MTA(in_channel, in_channel)
 
-        self.decoder_block2 = MTA(
-            in_channel,
-            in_channel,
-        )
-
-        self.decoder_block1 = MTA(
-            in_channel,
-            in_channel,
-        )
-
-        self.conv_mask_4 = nn.Sequential(
-            nn.Conv2d(in_channel, 1, 1, 1, 0),
-            # nn.BatchNorm2d(ic),
-            # nn.ReLU(inplace=True),
-            # nn.Conv2d(ic, 1, 1, 1, 0),
-        )
-        self.conv_mask_3 = nn.Sequential(
-            nn.Conv2d(in_channel, 1, 1, 1, 0),
-            # nn.BatchNorm2d(ic),
-            # nn.ReLU(inplace=True),
-            # nn.Conv2d(ic, 1, 1, 1, 0),
-        )
-        self.conv_mask_2 = nn.Sequential(
-            nn.Conv2d(in_channel, 1, 1, 1, 0),
-            # nn.BatchNorm2d(ic),
-            # nn.ReLU(inplace=True),
-            # nn.Conv2d(ic, 1, 1, 1, 0),
-        )
+        self.conv_mask_4 = nn.Sequential(nn.Conv2d(in_channel, 1, 1))
+        self.conv_mask_3 = nn.Sequential(nn.Conv2d(in_channel, 1, 1))
+        self.conv_mask_2 = nn.Sequential(nn.Conv2d(in_channel, 1, 1))
 
         self.tra_fr = nn.Sequential(
             nn.Upsample(scale_factor=2, mode="bilinear", align_corners=False),
-            nn.Conv2d(in_channel, in_channel // 2, 1, 1, 0),
+            nn.Conv2d(in_channel, in_channel // 2, 1),
             nn.BatchNorm2d(in_channel // 2),
             nn.ReLU(inplace=True),
         )
+
         self.predictor_fr = nn.Sequential(
             nn.Upsample(scale_factor=2, mode="bilinear", align_corners=False),
             nn.Conv2d(in_channel // 2, in_channel // 2, 3, 1, 1),
             nn.BatchNorm2d(in_channel // 2),
             nn.ReLU(inplace=True),
-            nn.Conv2d(in_channel // 2, 1, 1, 1, 0),
+            nn.Conv2d(in_channel // 2, 1, 1),
         )
 
         self.De_conv4 = FEM(in_channel + in_channel // 4, in_channel, edge=True)
@@ -147,130 +315,105 @@ class Decoder(nn.Module):
         self.De_conv2 = FEM(in_channel + in_channel // 4, in_channel, edge=True)
         self.De_conv1 = FEM(in_channel + in_channel // 4, in_channel, edge=True)
 
+        self.uncertainty_head = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode="bilinear", align_corners=False),
+            nn.Conv2d(in_channel, in_channel // 2, 3, 1, 1),
+            nn.BatchNorm2d(in_channel // 2),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(in_channel // 2, 1, 1)
+        )
+
+    def _build_ipt(self, x, ref, existing_block):
+        """
+        Dynamically create ConvsByConvs with correct input channels
+        """
+        _, c, H, W = x.shape
+        _, _, h, w = ref.shape
+
+        hg = H // h
+        wg = W // w
+
+        in_ch = c * hg * wg
+
+        if existing_block is None:
+            return ConvsByConvs(in_ch, ref.shape[1] // 4).to(x.device)
+
+        return existing_block
+
     def forward(self, features, edge):
         x, x1, x2, x3, x4 = features
 
-        patches_batch = image2patches(
-            x, patch_ref=x4, transformation="b c (hg h) (wg w) -> b (c hg wg) h w"
+        # -------- LEVEL 4 --------
+        self.ipt_blk5 = self._build_ipt(x, x4, self.ipt_blk5)
+
+        patches = image2patches(
+            x, patch_ref=x4,
+            transformation="b c (hg h) (wg w) -> b (c hg wg) h w"
         )
-        x4 = torch.cat(
-            (
-                x4,
-                self.ipt_blk5(
-                    F.interpolate(
-                        patches_batch,
-                        size=x4.shape[2:],
-                        mode="bilinear",
-                        align_corners=False,
-                    )
-                ),
-            ),
-            1,
-        )
-        x4 = self.De_conv4(
+
+        x4 = torch.cat((
             x4,
-            edge=F.interpolate(
-                edge, size=x4.shape[2:], mode="bilinear", align_corners=False
-            ),
-        )
+            self.ipt_blk5(F.interpolate(patches, size=x4.shape[2:], mode="bilinear", align_corners=False))
+        ), 1)
 
-        patches_batch = image2patches(
-            x, patch_ref=x3, transformation="b c (hg h) (wg w) -> b (c hg wg) h w"
-        )
-        x3 = torch.cat(
-            (
-                x3,
-                self.ipt_blk4(
-                    F.interpolate(
-                        patches_batch,
-                        size=x3.shape[2:],
-                        mode="bilinear",
-                        align_corners=False,
-                    )
-                ),
-            ),
-            1,
-        )
-        x3 = self.De_conv3(
+        x4 = self.De_conv4(x4, edge=F.interpolate(edge, size=x4.shape[2:]))
+
+        # -------- LEVEL 3 --------
+        self.ipt_blk4 = self._build_ipt(x, x3, self.ipt_blk4)
+
+        patches = image2patches(x, patch_ref=x3,
+                                transformation="b c (hg h) (wg w) -> b (c hg wg) h w")
+
+        x3 = torch.cat((
             x3,
-            edge=F.interpolate(
-                edge, size=x3.shape[2:], mode="bilinear", align_corners=False
-            ),
-        )
+            self.ipt_blk4(F.interpolate(patches, size=x3.shape[2:], mode="bilinear", align_corners=False))
+        ), 1)
 
-        patches_batch = image2patches(
-            x, patch_ref=x2, transformation="b c (hg h) (wg w) -> b (c hg wg) h w"
-        )
-        x2 = torch.cat(
-            (
-                x2,
-                self.ipt_blk3(
-                    F.interpolate(
-                        patches_batch,
-                        size=x2.shape[2:],
-                        mode="bilinear",
-                        align_corners=False,
-                    )
-                ),
-            ),
-            1,
-        )
-        x2 = self.De_conv2(
+        x3 = self.De_conv3(x3, edge=F.interpolate(edge, size=x3.shape[2:]))
+
+        # -------- LEVEL 2 --------
+        self.ipt_blk3 = self._build_ipt(x, x2, self.ipt_blk3)
+
+        patches = image2patches(x, patch_ref=x2,
+                                transformation="b c (hg h) (wg w) -> b (c hg wg) h w")
+
+        x2 = torch.cat((
             x2,
-            edge=F.interpolate(
-                edge, size=x2.shape[2:], mode="bilinear", align_corners=False
-            ),
-        )
+            self.ipt_blk3(F.interpolate(patches, size=x2.shape[2:], mode="bilinear", align_corners=False))
+        ), 1)
 
-        patches_batch = image2patches(
-            x, patch_ref=x1, transformation="b c (hg h) (wg w) -> b (c hg wg) h w"
-        )
-        x1 = torch.cat(
-            (
-                x1,
-                self.ipt_blk2(
-                    F.interpolate(
-                        patches_batch,
-                        size=x1.shape[2:],
-                        mode="bilinear",
-                        align_corners=False,
-                    )
-                ),
-            ),
-            1,
-        )
-        x1 = self.De_conv1(
+        x2 = self.De_conv2(x2, edge=F.interpolate(edge, size=x2.shape[2:]))
+
+        # -------- LEVEL 1 --------
+        self.ipt_blk2 = self._build_ipt(x, x1, self.ipt_blk2)
+
+        patches = image2patches(x, patch_ref=x1,
+                                transformation="b c (hg h) (wg w) -> b (c hg wg) h w")
+
+        x1 = torch.cat((
             x1,
-            edge=F.interpolate(
-                edge, size=x1.shape[2:], mode="bilinear", align_corners=False
-            ),
-        )
+            self.ipt_blk2(F.interpolate(patches, size=x1.shape[2:], mode="bilinear", align_corners=False))
+        ), 1)
 
+        x1 = self.De_conv1(x1, edge=F.interpolate(edge, size=x1.shape[2:]))
+
+        # -------- DECODER --------
         out_mask = []
 
         p4 = self.decoder_block4(x4)
-
         m4 = self.conv_mask_4(p4)
 
-        _p4 = F.interpolate(p4, size=x3.shape[2:], mode="bilinear", align_corners=False)
-        _p3 = _p4 + x3
-
-        p3 = self.decoder_block3(_p3, m4, edge, x)
+        p3 = self.decoder_block3(F.interpolate(p4, size=x3.shape[2:]) + x3, m4, edge, x)
         m3 = self.conv_mask_3(p3)
-        _p3 = F.interpolate(p3, size=x2.shape[2:], mode="bilinear", align_corners=False)
-        _p2 = _p3 + x2
 
-        p2 = self.decoder_block2(_p2, m3, edge, x)
+        p2 = self.decoder_block2(F.interpolate(p3, size=x2.shape[2:]) + x2, m3, edge, x)
         m2 = self.conv_mask_2(p2)
-        _p2 = F.interpolate(p2, size=x1.shape[2:], mode="bilinear", align_corners=False)
-        _p1 = _p2 + x1
 
-        p1 = self.decoder_block1(_p1, m2, edge, x)
+        p1 = self.decoder_block1(F.interpolate(p2, size=x1.shape[2:]) + x1, m2, edge, x)
         m1 = self.predictor_fr(self.tra_fr(p1))
+        
+        log_var = self.uncertainty_head(p1)
 
-        out_mask.append(m4)
-        out_mask.append(m3)
-        out_mask.append(m2)
-        out_mask.append(m1)
+        out_mask.extend([m4, m3, m2, m1])
 
-        return out_mask
+        return out_mask, log_var
