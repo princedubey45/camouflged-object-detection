@@ -1,0 +1,42 @@
+# Ignore Python virtual environments
+.venv/
+venv/
+ENV/
+
+# Ignore Python backend code
+*.py
+models/
+checkpoints/
+requirements.txt
+
+# Ignore Docker files
+Dockerfile
+.dockerignore
+
+# Ignore run scripts and docs
+run.sh
+run_web.sh
+setup_cuda_windows.bat
+train_windows.bat
+README_WINDOWS.txt
+README.md
+
+# Ignore build artifacts and caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.DS_Store
+
+# Ignore outputs
+preds/
+new_preds/
+new_results/
+new_results_preds/
+test_30_preds/
+test_30_res/
+*.log
+log.txt
+*.pptx
+*.pdf
+*.png
